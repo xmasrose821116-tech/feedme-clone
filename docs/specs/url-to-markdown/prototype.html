@@ -1,0 +1,507 @@
+<!--
+  prototype shell: the review chrome every prototype starts from.
+
+  Keep this comment in the prototype you grow from here: it is the contract,
+  and later turns work from that file rather than from this one.
+
+  Contract (extend product screens; keep the review shell):
+  - Product:  .sh-stage contains only end-user product UI. Keep review notes,
+               rationale, instructions, and approval controls in conversation.
+  - Screens:  <section data-screen="slug" data-title="Label"> inside .sh-stage.
+               The selector, arrow keys, and #hash routing build themselves.
+               Use one option per product destination or distinct surface,
+               named by its product role. Keep baselines, variants, comparison
+               labels, steps, indexes, and progress out of names and states.
+               Links may use href="#slug".
+  - States:   "Default" is automatic. A screen declares only representative
+               presets in data-states="Empty,Error". Use natural, screen-specific
+               names. Reserve presets for important multi-step results, forced
+               data or errors, or materially different structure; keep one-click
+               and transient states as interactions. Use data-when="Empty" on
+               preset-only elements. Call prototypeShell.setState("Name") on
+               entry and setState("Default") on exit, including when repeated
+               actions cross a preset condition.
+  - Viewport: "vp (m)" cycles full / 390 / 768. The 390 preset is a
+               fixed-height, internally scrolling phone frame. Start a
+               mobile-first prototype by adding class="sh-vp-390" to <body>
+               (or a bootstrap classList.add before the chrome script runs).
+  - Pinning:  keep in-frame bars (tab bars, CTAs) inside the phone with
+               position: sticky; position: fixed pins to the browser window.
+  - Tokens:   replace the project-tokens block with project tokens copied
+               verbatim. Map differing names to --background, --foreground, and
+               --font afterwards; replace network fonts with a system stack and
+               note that substitution. Without a design system, keep this
+               palette as the finished style.
+  - Placeholders: .wf-pic stands in for pictures the prototype has no real
+               files for. Use real text everywhere text belongs.
+
+  - Chrome:   Keep exactly the screen selector, selected-screen state selector,
+               and viewport cycle. Chrome that needs explaining has failed.
+
+  Self-contained by design: no build, no framework, no network.
+
+  Note: project uses shadcn (style "base-vega", baseColor "neutral", radius
+  0.625rem, oklch tokens) with the Inter font loaded from Google Fonts. Tokens
+  below are copied verbatim from app/globals.css. Inter is swapped for a
+  system sans stack here since the prototype must stay network-free.
+-->
+<meta charset="utf-8">
+<title>Prototype — URL to Markdown</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ── project tokens: copied verbatim from app/globals.css ── */
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; /* Inter substituted: no network fonts in prototype */
+  }
+  .sh-stage.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+  }
+
+  /* ── review chrome (sh-*): keep; extend product styles elsewhere ── */
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 0 0 40px;
+    background: #f6f6f6; color: #3a3a3a;
+    font-family: var(--font);
+  }
+  .sh-bar {
+    position: sticky; top: 0; z-index: 999;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: #191a1c; color: #d7d7d7;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .sh-bar b, .sh-control-label { color: #8a8f98; font-weight: 500 }
+  .sh-control { display: inline-flex; gap: 5px; align-items: center }
+  .sh-bar button {
+    border: 1px solid #3a3d42; background: none; color: inherit;
+    font: inherit; padding: 2px 9px; border-radius: 99px; cursor: pointer;
+  }
+  .sh-bar select {
+    width: 170px; border: 1px solid #3a3d42; background: #232428; color: inherit;
+    font: inherit; padding: 3px 28px 3px 9px; border-radius: 7px; cursor: pointer;
+    color-scheme: dark;
+  }
+  #sh-screen { width: 190px }
+  .sh-bar button.on { background: #d7d7d7; color: #191a1c; border-color: #d7d7d7 }
+  .sh-spacer { flex: 1 }
+  .sh-stage { max-width: 960px; margin: 0 auto; padding: 12px 16px 0 }
+  [hidden] { display: none !important }
+
+  /* viewport presets */
+  .sh-vp-390 .sh-stage {
+    max-width: 390px; background: var(--background, #f6f6f6);
+    border: 10px solid #191a1c; border-radius: 28px;
+    padding: 16px 12px; height: min(844px, calc(100dvh - 52px));
+    overflow-y: auto; margin-top: 12px;
+  }
+  .sh-vp-768 .sh-stage {
+    max-width: 768px; border: 1px solid #c4c4c4; border-radius: 12px;
+    padding: 16px; margin-top: 12px;
+  }
+
+  /* placeholders */
+  .wf-pic  { border-radius: 4px; background:
+             repeating-linear-gradient(45deg, #e9e9e9, #e9e9e9 6px, #f2f2f2 6px, #f2f2f2 12px) }
+
+  /* ── product styles ── */
+  .sh-stage {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font);
+    border-radius: 0;
+    transition: background .15s ease, color .15s ease;
+  }
+  .app-shell { padding: 28px 4px 60px; display: flex; flex-direction: column; gap: 20px; }
+  .app-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .app-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .app-title span { color: var(--muted-foreground); font-weight: 400; }
+
+  [data-component="Button"] {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 36px; padding: 0 14px; border-radius: calc(var(--radius) * 0.8);
+    border: 1px solid transparent; font: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; transition: all .12s ease;
+  }
+  [data-component="Button"]:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn-primary:hover:not(:disabled) { opacity: .85; }
+  .btn-outline { background: var(--background); color: var(--foreground); border-color: var(--border); }
+  .btn-outline:hover:not(:disabled) { background: var(--muted); }
+  .btn-ghost { background: transparent; color: var(--muted-foreground); }
+  .btn-ghost:hover:not(:disabled) { background: var(--muted); color: var(--foreground); }
+  .btn-icon { width: 36px; padding: 0; }
+
+  [data-component="Input"], [data-component="Textarea"] {
+    width: 100%; background: var(--background); color: var(--foreground);
+    border: 1px solid var(--input); border-radius: calc(var(--radius) * 0.8);
+    padding: 0 12px; font: inherit; font-size: 14px; height: 42px;
+  }
+  [data-component="Textarea"] { height: auto; min-height: 68px; padding: 10px 12px; resize: vertical; }
+  [data-component="Input"]:focus, [data-component="Textarea"]:focus {
+    outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring), transparent 70%);
+  }
+
+  .input-row { display: flex; gap: 8px; align-items: center; }
+  .input-row [data-component="Input"] { flex: 1; }
+  .input-hint { font-size: 12.5px; color: var(--muted-foreground); }
+
+  [data-component="Alert"] {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid color-mix(in oklch, var(--destructive), transparent 60%);
+    background: color-mix(in oklch, var(--destructive), transparent 92%);
+    color: var(--foreground); border-radius: calc(var(--radius) * 0.8);
+    padding: 12px 14px; font-size: 13.5px; line-height: 1.5;
+  }
+  [data-component="Alert"] .alert-icon { color: var(--destructive); font-weight: 700; }
+  [data-component="Alert"] .alert-title { font-weight: 600; margin-bottom: 2px; }
+
+  [data-component="Card"] {
+    border: 1px solid var(--border); background: var(--card); color: var(--card-foreground);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .result-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+  .result-title { font-size: 19px; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .result-meta { font-size: 12.5px; color: var(--muted-foreground); display: flex; gap: 6px; flex-wrap: wrap; }
+  .result-meta .dot::before { content: "·"; margin: 0 2px; }
+
+  .result-body { padding: 20px; }
+  .markdown-preview { font-size: 14.5px; line-height: 1.7; max-width: 68ch; }
+  .markdown-preview h2 { font-size: 16px; font-weight: 650; margin: 20px 0 8px; }
+  .markdown-preview h2:first-child { margin-top: 0; }
+  .markdown-preview p { margin: 0 0 12px; }
+  .markdown-preview ul { margin: 0 0 12px; padding-left: 20px; }
+  .markdown-preview li { margin-bottom: 4px; }
+  .markdown-preview blockquote {
+    margin: 0 0 12px; padding: 2px 14px; border-left: 3px solid var(--border);
+    color: var(--muted-foreground); font-style: italic;
+  }
+  .markdown-preview pre {
+    margin: 0 0 12px; padding: 12px 14px; background: var(--muted); border-radius: calc(var(--radius) * 0.6);
+    overflow-x: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .markdown-preview code { font: inherit; }
+
+  .prompt-section { padding: 16px 20px; }
+  .prompt-label { font-size: 12.5px; font-weight: 600; color: var(--muted-foreground); margin-bottom: 8px; }
+  .prompt-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  [data-component="new:PromptChip"] {
+    border: 1px solid var(--border); background: var(--background); color: var(--foreground);
+    border-radius: 999px; padding: 6px 13px; font-size: 12.5px; font-weight: 500;
+    cursor: pointer; transition: all .12s ease;
+  }
+  [data-component="new:PromptChip"]:hover { background: var(--muted); }
+  [data-component="new:PromptChip"].selected { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  .prompt-custom { margin-top: 10px; }
+  .prompt-help { margin-top: 10px; font-size: 12px; color: var(--muted-foreground); line-height: 1.5; }
+
+  .export-row { padding: 14px 20px 18px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; border-top: 1px solid var(--border); }
+  .export-feedback { font-size: 12.5px; color: var(--muted-foreground); opacity: 0; transition: opacity .15s ease; }
+  .export-feedback.show { opacity: 1; }
+
+  @media (max-width: 480px) {
+    .input-row { flex-wrap: wrap; }
+    .export-row [data-component="Button"] { flex: 1 1 calc(50% - 4px); }
+  }
+</style>
+
+<header class="sh-bar">
+  <b>proto</b>
+  <label class="sh-control"><span class="sh-control-label">screen</span><select id="sh-screen"></select></label>
+  <span class="sh-spacer"></span>
+  <label class="sh-control"><span class="sh-control-label">state</span><select id="sh-state"></select></label>
+  <button id="sh-vp">vp: full (m)</button>
+</header>
+
+<main class="sh-stage">
+  <section data-screen="converter" data-title="변환기" data-states="Error">
+    <div class="app-shell">
+      <div class="app-topbar">
+        <div class="app-title">URL to Markdown <span>· 웹페이지를 마크다운으로</span></div>
+        <button data-component="Button" class="btn-ghost btn-icon" id="dark-toggle" aria-label="다크모드 전환" title="다크모드 전환">◐</button>
+      </div>
+
+      <div class="input-row">
+        <input data-component="Input" id="url-input" type="text" value="https://buildnote.dev/2024/rethinking-our-cache-strategy" placeholder="https://example.com/article">
+        <button data-component="Button" class="btn-primary" id="convert-btn">변환하기</button>
+        <button data-component="Button" class="btn-ghost btn-icon" id="clear-btn" aria-label="지우기" title="지우기">✕</button>
+      </div>
+      <div class="input-hint" data-when="Default">웹페이지 URL을 붙여넣고 변환하기를 누르세요.</div>
+
+      <div data-when="Error">
+        <div data-component="Alert">
+          <span class="alert-icon">!</span>
+          <div>
+            <div class="alert-title">본문을 추출하지 못했어요</div>
+            <div>로그인이 필요한 페이지이거나 접근이 차단되어 있는 것 같아요. 다른 URL로 다시 시도해보세요.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="prompt-block" data-component="Card" class="prompt-section" hidden>
+        <div class="prompt-label">프롬프트 (선택)</div>
+        <div class="prompt-chips" id="prompt-chips">
+          <button data-component="new:PromptChip" data-prompt="요약해줘">요약해줘</button>
+          <button data-component="new:PromptChip" data-prompt="한국어로 번역해줘">한국어로 번역해줘</button>
+          <button data-component="new:PromptChip" data-prompt="쉽게 설명해줘">쉽게 설명해줘</button>
+          <button data-component="new:PromptChip" data-prompt="__custom__" id="chip-custom">직접 입력</button>
+        </div>
+        <div class="prompt-custom" id="prompt-custom-wrap" hidden>
+          <textarea data-component="Textarea" id="prompt-custom-input" placeholder="예: 이 글에서 핵심 문장 5개만 뽑아줘"></textarea>
+        </div>
+        <div class="prompt-help">선택한 프롬프트는 복사하기·ChatGPT/Claude로 열기 앞에 붙어요. .md 다운로드에는 포함되지 않고, 저장되지 않아요.</div>
+      </div>
+
+      <div id="result-section" hidden>
+        <div data-component="Card">
+          <div class="result-header">
+            <h1 class="result-title">우리가 캐싱 전략을 다시 설계한 이유</h1>
+            <div class="result-meta">
+              <span>이하늘</span>
+              <span class="dot">buildnote.dev</span>
+              <span class="dot">2024년 11월 3일</span>
+              <span class="dot">읽는 데 약 6분</span>
+            </div>
+          </div>
+          <div class="result-body">
+            <div class="markdown-preview">
+              <h2>왜 기존 캐시가 무너졌나</h2>
+              <p>지난 분기까지 우리는 TTL 고정형 캐시를 5분 단위로 돌려왔다. 문제는 트래픽이 몰리는 시간대에 캐시 적중률이 61.4%까지 떨어지면서 원본 DB가 그대로 노출됐다는 점이다. 장애 리포트를 열어보면 절반 이상이 이 구간에서 시작됐다.</p>
+              <blockquote>캐시는 만병통치약이 아니다. 잘못 쓰면 버그를 캐싱하는 꼴이 된다.</blockquote>
+              <h2>새 전략: 계층형 무효화</h2>
+              <p>키를 단일 레이어로 두지 않고, 요청 단위·사용자 단위·전역 단위 세 계층으로 나눴다. 이렇게 하면 한 사용자의 데이터가 바뀌어도 전역 캐시를 통째로 날릴 필요가 없다.</p>
+              <ul>
+                <li>요청 단위: 60초 TTL, 동일 파라미터 재요청만 흡수</li>
+                <li>사용자 단위: 쓰기 발생 시 즉시 무효화</li>
+                <li>전역 단위: 스키마 변경 등 드문 이벤트에서만 초기화</li>
+              </ul>
+              <pre><code>cache.key = `v2:${userId}:${resourceId}:${paramsHash}`</code></pre>
+              <h2>결과</h2>
+              <p>적용 2주 뒤 적중률은 88.7%로 올라갔고, 야간 배치 시간대 DB 커넥션 풀 고갈 알림은 0건이었다. 무효화 로직이 늘어난 만큼 테스트 코드도 같이 늘었다는 점은 감수할 부분이다.</p>
+            </div>
+          </div>
+          <div class="export-row">
+            <button data-component="Button" class="btn-outline" id="copy-btn">복사하기</button>
+            <button data-component="Button" class="btn-outline" id="download-btn">.md 다운로드</button>
+            <button data-component="Button" class="btn-outline" id="chatgpt-btn">ChatGPT로 열기</button>
+            <button data-component="Button" class="btn-outline" id="claude-btn">Claude로 열기</button>
+            <span class="export-feedback" id="export-feedback"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const stage = document.querySelector('.sh-stage');
+  const screens = [...stage.querySelectorAll('[data-screen]')];
+  const screenSelect = document.getElementById('sh-screen');
+  const stateSelect = document.getElementById('sh-state');
+  const vpBtn = document.getElementById('sh-vp');
+  let current = null;
+  let currentStates = [];
+
+  screens.forEach(s => {
+    const option = document.createElement('option');
+    option.textContent = s.dataset.title || s.dataset.screen;
+    option.value = s.dataset.screen;
+    screenSelect.append(option);
+  });
+  screenSelect.onchange = () => show(screenSelect.value);
+
+  function show(slug) {
+    current = screens.find(s => s.dataset.screen === slug) || screens[0];
+    screens.forEach(s => s.hidden = s !== current);
+    screenSelect.value = current.dataset.screen;
+    history.replaceState(null, '', '#' + current.dataset.screen);
+    buildStates();
+  }
+
+  function buildStates() {
+    const declared = (current.dataset.states || '').split(',').map(x => x.trim()).filter(Boolean);
+    currentStates = ['Default', ...declared.filter(name => name !== 'Default')];
+    stateSelect.innerHTML = '';
+    currentStates.forEach(name => {
+      const option = document.createElement('option');
+      option.textContent = name;
+      option.value = name;
+      stateSelect.append(option);
+    });
+    applyState('Default');
+  }
+
+  function applyState(name) {
+    const active = currentStates.includes(name) ? name : 'Default';
+    current.querySelectorAll('[data-when]').forEach(el => {
+      el.hidden = !el.dataset.when.split(',').map(x => x.trim()).includes(active);
+    });
+    stateSelect.value = active;
+    if (active === 'Error') {
+      document.getElementById('result-section').hidden = true;
+      document.getElementById('prompt-block').hidden = true;
+    }
+  }
+  stateSelect.onchange = () => applyState(stateSelect.value);
+
+  window.prototypeShell = {
+    showScreen: show,
+    setState: applyState,
+    getScreen: () => current?.dataset.screen,
+    getState: () => stateSelect.value
+  };
+
+  const VPS = ['full', '390', '768'];
+  let vp = VPS.find(v => document.body.classList.contains('sh-vp-' + v)) || 'full';
+  function applyVp() {
+    VPS.forEach(v => document.body.classList.toggle('sh-vp-' + v, v === vp && v !== 'full'));
+    vpBtn.textContent = 'vp: ' + vp + ' (m)';
+    vpBtn.classList.toggle('on', vp !== 'full');
+  }
+  vpBtn.onclick = () => { vp = VPS[(VPS.indexOf(vp) + 1) % VPS.length]; applyVp(); };
+  applyVp();
+
+  addEventListener('keydown', e => {
+    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    const i = screens.indexOf(current);
+    if (e.key === 'ArrowRight') show(screens[(i + 1) % screens.length].dataset.screen);
+    if (e.key === 'ArrowLeft') show(screens[(i - 1 + screens.length) % screens.length].dataset.screen);
+    if (e.key === 'm') vpBtn.click();
+  });
+
+  addEventListener('hashchange', () => show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+
+  // ── product interactions ──
+  const urlInput = document.getElementById('url-input');
+  const convertBtn = document.getElementById('convert-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const resultSection = document.getElementById('result-section');
+  const promptBlock = document.getElementById('prompt-block');
+  const darkToggle = document.getElementById('dark-toggle');
+  const promptChips = document.getElementById('prompt-chips');
+  const customWrap = document.getElementById('prompt-custom-wrap');
+  const customInput = document.getElementById('prompt-custom-input');
+  const chipCustom = document.getElementById('chip-custom');
+  const feedback = document.getElementById('export-feedback');
+  let selectedPrompt = null;
+
+  convertBtn.onclick = () => {
+    if (!urlInput.value.trim()) return;
+    applyState('Default');
+    convertBtn.textContent = '변환 중...';
+    convertBtn.disabled = true;
+    setTimeout(() => {
+      convertBtn.textContent = '변환하기';
+      convertBtn.disabled = false;
+      promptBlock.hidden = false;
+      resultSection.hidden = false;
+    }, 500);
+  };
+
+  clearBtn.onclick = () => {
+    urlInput.value = '';
+    promptBlock.hidden = true;
+    resultSection.hidden = true;
+    applyState('Default');
+    selectedPrompt = null;
+    [...promptChips.children].forEach(c => c.classList.remove('selected'));
+    customWrap.hidden = true;
+    customInput.value = '';
+  };
+
+  darkToggle.onclick = () => {
+    stage.classList.toggle('dark');
+    darkToggle.textContent = stage.classList.contains('dark') ? '◑' : '◐';
+  };
+
+  promptChips.querySelectorAll('[data-component="new:PromptChip"]').forEach(chip => {
+    chip.onclick = () => {
+      const already = chip.classList.contains('selected');
+      [...promptChips.children].forEach(c => c.classList.remove('selected'));
+      customWrap.hidden = true;
+      if (already) { selectedPrompt = null; return; }
+      chip.classList.add('selected');
+      if (chip === chipCustom) {
+        customWrap.hidden = false;
+        customInput.focus();
+        selectedPrompt = () => customInput.value.trim();
+      } else {
+        selectedPrompt = () => chip.dataset.prompt;
+      }
+    };
+  });
+
+  function currentPromptText() {
+    if (!selectedPrompt) return '';
+    const text = selectedPrompt();
+    return text ? text + '\n\n---\n\n' : '';
+  }
+
+  function markdownSource() {
+    return '# 우리가 캐싱 전략을 다시 설계한 이유\n\n이하늘 · buildnote.dev · 2024년 11월 3일\n\n' +
+      document.querySelector('.markdown-preview').innerText;
+  }
+
+  function flash(msg) {
+    feedback.textContent = msg;
+    feedback.classList.add('show');
+    clearTimeout(flash._t);
+    flash._t = setTimeout(() => feedback.classList.remove('show'), 2200);
+  }
+
+  document.getElementById('copy-btn').onclick = async () => {
+    const text = currentPromptText() + markdownSource();
+    try { await navigator.clipboard.writeText(text); } catch (e) {}
+    flash('클립보드에 복사했어요');
+  };
+
+  document.getElementById('download-btn').onclick = () => {
+    const blob = new Blob([markdownSource()], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'rethinking-our-cache-strategy.md';
+    a.click();
+    flash('rethinking-our-cache-strategy.md 다운로드했어요');
+  };
+
+  async function openWith(name, url) {
+    window.open(url, '_blank', 'noopener');
+    const text = currentPromptText() + markdownSource();
+    try { await navigator.clipboard.writeText(text); } catch (e) {}
+    flash(name + ' 새 탭을 열고 클립보드에 복사했어요 — 붙여넣기(Ctrl+V) 하세요');
+  }
+  document.getElementById('chatgpt-btn').onclick = () => openWith('ChatGPT', 'https://chatgpt.com/');
+  document.getElementById('claude-btn').onclick = () => openWith('Claude', 'https://claude.ai/new');
+</script>
